@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vehicle Tracking Dashboard — Hamzah Saiyed</title>
+
+  <!-- Leaflet map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      grid-template-columns: 340px 1fr;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    header {
+      grid-column: 1 / -1;
+      background: #1a1a2e;
+      border-bottom: 2px solid #0f3460;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; color: #00d4aa; }
+    header .badge {
+      background: #0f3460;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      color: #7ec8e3;
+    }
+    #connection-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+    .dot.connected    { background: #00d4aa; box-shadow: 0 0 6px #00d4aa; }
+    .dot.disconnected { background: #ff4757; }
+
+    /* ── Sidebar ─────────────────────────────── */
+    aside {
+      background: #12122a;
+      border-right: 1px solid #1e1e3a;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .card h3 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #7ec8e3;
+      margin-bottom: 10px;
+    }
+
+    /* Direction indicator */
+    #direction-display {
+      text-align: center;
+      padding: 10px;
+    }
+    .direction-arrow {
+      font-size: 3rem;
+      transition: transform 0.3s;
+    }
+    #direction-label {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #00d4aa;
+      margin-top: 6px;
+    }
+
+    /* Stat rows */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid #2a2a4a;
+      font-size: 0.85rem;
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: #888; }
+    .stat-value { font-weight: 600; color: #e0e0e0; }
+    .stat-value.ok      { color: #00d4aa; }
+    .stat-value.warning { color: #ffa502; }
+    .stat-value.danger  { color: #ff4757; }
+
+    /* IMU gauges */
+    .gauge-bar {
+      height: 8px;
+      background: #2a2a4a;
+      border-radius: 4px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+    .gauge-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #00d4aa, #7ec8e3);
+      transition: width 0.3s;
+    }
+
+    /* Map */
+    #map {
+      grid-column: 2;
+      grid-row: 2;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Obstacle alert */
+    #obstacle-alert {
+      display: none;
+      background: #ff475733;
+      border: 1px solid #ff4757;
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+      color: #ff4757;
+      font-weight: 600;
+      font-size: 0.85rem;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.5; }
+    }
+    #obstacle-alert.visible { display: block; }
+
+    /* Packet counter */
+    #packet-count {
+      text-align: center;
+      font-size: 0.7rem;
+      color: #555;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <h1>🚗 Vehicle Tracking Machine</h1>
+    <span class="badge">IoT Project</span>
+    <span class="badge">ESP32 + GPS</span>
+    <div id="connection-status">
+      <div class="dot" id="conn-dot"></div>
+      <span id="conn-label">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside>
+
+    <!-- Direction -->
+    <div class="card">
+      <h3>🧭 Direction</h3>
+      <div id="direction-display">
+        <div class="direction-arrow" id="direction-arrow">⏹</div>
+        <div id="direction-label">STOP</div>
+      </div>
+    </div>
+
+    <!-- GPS -->
+    <div class="card">
+      <h3>📍 GPS</h3>
+      <div class="stat-row"><span class="stat-label">Latitude</span><span class="stat-value" id="lat">—</span></div>
+      <div class="stat-row"><span class="stat-label">Longitude</span><span class="stat-value" id="lon">—</span></div>
+      <div class="stat-row"><span class="stat-label">Speed</span><span class="stat-value" id="speed">—</span></div>
+      <div class="stat-row"><span class="stat-label">Heading</span><span class="stat-value" id="heading">—</span></div>
+    </div>
+
+    <!-- Obstacle -->
+    <div class="card">
+      <h3>🔊 Ultrasonic</h3>
+      <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value" id="distance">—</span></div>
+      <div id="obstacle-alert">⚠️ OBSTACLE DETECTED</div>
+    </div>
+
+    <!-- IMU -->
+    <div class="card">
+      <h3>📐 IMU (MPU6050)</h3>
+      <div style="font-size:0.8rem; margin-bottom:6px; color:#888">Accelerometer (g)</div>
+      <div class="stat-row"><span class="stat-label">X</span><span class="stat-value" id="ax">0.00</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" id="ax-bar" style="width:50%"></div></div>
+      <div class="stat-row" style="margin-top:6px"><span class="stat-label">Y</span><span class="stat-value" id="ay">0.00</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" id="ay-bar" style="width:50%"></div></div>
+      <div class="stat-row" style="margin-top:6px"><span class="stat-label">Z</span><span class="stat-value" id="az">0.00</span></div>
+      <div class="gauge-bar"><div class="gauge-fill" id="az-bar" style="width:50%"></div></div>
+    </div>
+
+    <!-- Last updated -->
+    <div class="card">
+      <h3>🕐 Last Update</h3>
+      <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value ok" id="last-update">—</span></div>
+      <div class="stat-row"><span class="stat-label">Packets</span><span class="stat-value" id="packet-recv">0</span></div>
+    </div>
+
+    <div id="packet-count">Vehicle Tracking Machine — Hamzah Saiyed</div>
+  </aside>
+
+  <!-- Map -->
+  <div id="map"></div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // ─────────────────────────────────────────
+    //  Map Initialisation
+    // ─────────────────────────────────────────
+    const map = L.map('map').setView([23.0225, 72.5714], 15);  // Default: Ahmedabad
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const vehicleIcon = L.divIcon({
+      html: '<div style="font-size:24px;transform:translate(-50%,-50%)">🚗</div>',
+      className: '', iconSize: [30, 30]
+    });
+
+    let vehicleMarker = null;
+    let trackPolyline = L.polyline([], { color: '#00d4aa', weight: 3 }).addTo(map);
+    let trackPoints = [];
+    let packetCount = 0;
+
+    // ─────────────────────────────────────────
+    //  Direction Arrows
+    // ─────────────────────────────────────────
+    const directionMap = {
+      FORWARD:  { arrow: '⬆️', rotate: '0deg'   },
+      BACKWARD: { arrow: '⬇️', rotate: '180deg' },
+      LEFT:     { arrow: '⬅️', rotate: '-90deg' },
+      RIGHT:    { arrow: '➡️', rotate: '90deg'  },
+      STOP:     { arrow: '⏹',  rotate: '0deg'   }
+    };
+
+    // ─────────────────────────────────────────
+    //  Socket.IO
+    // ─────────────────────────────────────────
+    const socket = io();
+
+    socket.on('connect', () => {
+      document.getElementById('conn-dot').className   = 'dot connected';
+      document.getElementById('conn-label').textContent = 'Live';
+    });
+
+    socket.on('disconnect', () => {
+      document.getElementById('conn-dot').className   = 'dot disconnected';
+      document.getElementById('conn-label').textContent = 'Disconnected';
+    });
+
+    socket.on('vehicleUpdate', (data) => {
+      updateDashboard(data);
+    });
+
+    socket.on('historyData', (records) => {
+      records.forEach(r => {
+        if (r.latitude && r.longitude) {
+          trackPoints.push([r.latitude, r.longitude]);
+        }
+      });
+      trackPolyline.setLatLngs(trackPoints);
+    });
+
+    // Request history on load
+    socket.emit('requestHistory', { limit: 200 });
+
+    // ─────────────────────────────────────────
+    //  Update UI
+    // ─────────────────────────────────────────
+    function updateDashboard(d) {
+      packetCount++;
+
+      // GPS
+      document.getElementById('lat').textContent    = d.latitude?.toFixed(6)  ?? '—';
+      document.getElementById('lon').textContent    = d.longitude?.toFixed(6) ?? '—';
+      document.getElementById('speed').textContent  = (d.speed_kmph?.toFixed(1) ?? '0') + ' km/h';
+      document.getElementById('heading').textContent= (d.heading?.toFixed(1) ?? '0') + '°';
+
+      // Distance
+      const dist = d.distance_cm;
+      const distEl = document.getElementById('distance');
+      distEl.textContent = dist + ' cm';
+      distEl.className = 'stat-value ' + (dist < 30 ? 'danger' : dist < 60 ? 'warning' : 'ok');
+
+      // Obstacle alert
+      const alertEl = document.getElementById('obstacle-alert');
+      alertEl.className = 'obstacle-alert' + (d.obstacle_detected ? ' visible' : '');
+
+      // Direction
+      const dir = d.direction || 'STOP';
+      const dirInfo = directionMap[dir] || directionMap['STOP'];
+      document.getElementById('direction-arrow').textContent = dirInfo.arrow;
+      document.getElementById('direction-label').textContent = dir;
+
+      // IMU
+      const axes = ['x','y','z'];
+      axes.forEach(axis => {
+        const val = d[`accel_${axis}`] ?? 0;
+        document.getElementById(`a${axis}`).textContent = val.toFixed(3);
+        // Map -2g to +2g → 0-100%
+        const pct = Math.min(100, Math.max(0, ((val + 2) / 4) * 100));
+        document.getElementById(`a${axis}-bar`).style.width = pct + '%';
+      });
+
+      // Timestamp
+      document.getElementById('last-update').textContent =
+        new Date().toLocaleTimeString();
+      document.getElementById('packet-recv').textContent = packetCount;
+
+      // Map marker
+      if (d.latitude && d.longitude) {
+        const latlng = [d.latitude, d.longitude];
+        if (!vehicleMarker) {
+          vehicleMarker = L.marker(latlng, { icon: vehicleIcon }).addTo(map);
+        } else {
+          vehicleMarker.setLatLng(latlng);
+        }
+        map.panTo(latlng);
+        trackPoints.push(latlng);
+        if (trackPoints.length > 500) trackPoints.shift();
+        trackPolyline.setLatLngs(trackPoints);
+      }
+    }
+  </script>
+</body>
+</html>
