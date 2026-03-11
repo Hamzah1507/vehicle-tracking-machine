@@ -80,4 +80,4 @@ npm run dev
 
 **Hamzah Saiyed** — [github.com/Hamzah1507](https://github.com/Hamzah1507) · hamzah.2004saiyed@gmail.com
 
-> ⭐ Star this repo if it helped you!
+> ⭐ Star this repo if it helped you
